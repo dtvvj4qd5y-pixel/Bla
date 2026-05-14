@@ -11,14 +11,6 @@ set -euo pipefail
 # Usage: ./remove_proxies.sh [--dry-run] [--verbose] [--force] [--help]
 # ---------------------------------------------------------------------------
 
-# ── Color constants (disabled when not writing to a terminal) ──────────────
-if [[ -t 1 ]]; then
-    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-    CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
-else
-    RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; RESET=''
-fi
-
 # ── Global state ────────────────────────────────────────────────────────────
 DRY_RUN=false
 VERBOSE=false
@@ -32,14 +24,14 @@ declare -a ERROR_SERVICES=()
 NETWORKSETUP=/usr/sbin/networksetup
 
 # ── Output helpers ──────────────────────────────────────────────────────────
-log_verbose() { $VERBOSE && echo -e "  ${CYAN}[verbose]${RESET} $*" || true; }
+log_verbose() { $VERBOSE && echo "  [verbose] $*" || true; }
 
 log_change() {
     local service="$1" desc="$2"
     if $DRY_RUN; then
-        echo -e "  ${YELLOW}[dry-run] would remove:${RESET} $desc"
+        echo "  [dry-run] would remove: $desc"
     else
-        echo -e "  ${GREEN}[removed]${RESET} $desc"
+        echo "  [removed] $desc"
     fi
     # Append only once per service
     local already=false
@@ -51,7 +43,7 @@ log_change() {
 
 log_error() {
     local service="$1" msg="$2"
-    echo -e "  ${RED}[error]${RESET} $msg" >&2
+    echo "  [error] $msg" >&2
     local already=false
     local s; for s in "${ERROR_SERVICES[@]+"${ERROR_SERVICES[@]}"}"; do
         [[ "$s" == "$service" ]] && already=true && break
@@ -111,7 +103,7 @@ check_privileges() {
     elif sudo -n true 2>/dev/null; then
         log_verbose "sudo available without password."
     else
-        echo -e "${YELLOW}Warning:${RESET} Not running as root. Some services may fail due to permissions."
+        echo "Warning: Not running as root. Some services may fail due to permissions."
         echo "         Re-run with sudo if changes are not applied."
         echo
     fi
@@ -140,7 +132,7 @@ backup_settings() {
     BACKUP_FILE=$(mktemp /tmp/proxy_backup_XXXXXX.txt)
     local service
     {
-        echo "Proxy backup — $(date)"
+        echo "Proxy backup -- $(date)"
         echo "Active location: $("$NETWORKSETUP" -getcurrentlocation 2>/dev/null || echo unknown)"
         echo
         for service in "${ALL_SERVICES[@]}"; do
@@ -160,7 +152,7 @@ backup_settings() {
 }
 
 # ── Run a networksetup mutation, detecting soft errors ───────────────────────
-# networksetup often exits 0 but prints "** Error: ..." — capture and check.
+# networksetup often exits 0 but prints "** Error: ..." -- capture and check.
 ns_run() {
     local service="$1"; shift
     local out
@@ -298,12 +290,13 @@ process_service() {
     local service="$1"
     local changed_before=${#CHANGED_SERVICES[@]}
 
-    echo -e "\n${BOLD}${CYAN}━━ ${service} ━━${RESET}"
+    echo ""
+    echo "-- ${service} --"
 
     # VPN guard
     if is_vpn_service "$service" && ! $FORCE; then
-        echo -e "  ${YELLOW}[skipped]${RESET} VPN service — use --force to clean VPN services"
-        SKIPPED_SERVICES+=("$service (VPN — skipped)")
+        echo "  [skipped] VPN service -- use --force to clean VPN services"
+        SKIPPED_SERVICES+=("$service (VPN -- skipped)")
         return 0
     fi
 
@@ -323,7 +316,7 @@ process_service() {
         done
         if ! $in_errors; then
             SKIPPED_SERVICES+=("$service")
-            log_verbose "  → nothing to change"
+            log_verbose "  -> nothing to change"
         fi
     fi
 }
@@ -331,31 +324,32 @@ process_service() {
 # ── Summary ───────────────────────────────────────────────────────────────────
 print_summary() {
     echo
-    echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo "============================== Summary =============================="
 
     if [[ ${#CHANGED_SERVICES[@]} -gt 0 ]]; then
         local label="Cleaned"
         $DRY_RUN && label="Would clean"
-        echo -e "${GREEN}${label} (${#CHANGED_SERVICES[@]}):${RESET}"
-        local s; for s in "${CHANGED_SERVICES[@]}"; do echo "  • $s"; done
+        echo "${label} (${#CHANGED_SERVICES[@]}):"
+        local s; for s in "${CHANGED_SERVICES[@]}"; do echo "  * $s"; done
     fi
 
     if [[ ${#SKIPPED_SERVICES[@]} -gt 0 ]]; then
-        echo -e "${YELLOW}Already clean / skipped (${#SKIPPED_SERVICES[@]}):${RESET}"
-        local s; for s in "${SKIPPED_SERVICES[@]}"; do echo "  • $s"; done
+        echo "Already clean / skipped (${#SKIPPED_SERVICES[@]}):"
+        local s; for s in "${SKIPPED_SERVICES[@]}"; do echo "  * $s"; done
     fi
 
     if [[ ${#ERROR_SERVICES[@]} -gt 0 ]]; then
-        echo -e "${RED}Errors (${#ERROR_SERVICES[@]}):${RESET}"
-        local s; for s in "${ERROR_SERVICES[@]}"; do echo "  • $s"; done
-        echo -e "  ${YELLOW}Tip:${RESET} Re-run with sudo if permission errors occurred."
+        echo "Errors (${#ERROR_SERVICES[@]}):"
+        local s; for s in "${ERROR_SERVICES[@]}"; do echo "  * $s"; done
+        echo "  Tip: Re-run with sudo if permission errors occurred."
     fi
 
     echo
-    echo -e "Pre-change backup: ${CYAN}${BACKUP_FILE}${RESET}"
+    echo "Pre-change backup: ${BACKUP_FILE}"
 
     if $DRY_RUN; then
-        echo -e "\n${YELLOW}Dry-run mode — no changes were made.${RESET}"
+        echo
+        echo "Dry-run mode -- no changes were made."
     fi
 }
 
@@ -365,9 +359,9 @@ main() {
     require_macos
     check_privileges
 
-    echo -e "${BOLD}macOS Proxy & DNS Cleaner${RESET}"
-    echo -e "Active location: ${CYAN}$("$NETWORKSETUP" -getcurrentlocation 2>/dev/null || echo unknown)${RESET}"
-    $DRY_RUN && echo -e "${YELLOW}[dry-run mode — no changes will be made]${RESET}"
+    echo "macOS Proxy & DNS Cleaner"
+    echo "Active location: $("$NETWORKSETUP" -getcurrentlocation 2>/dev/null || echo unknown)"
+    $DRY_RUN && echo "[dry-run mode -- no changes will be made]"
     echo
 
     discover_services
